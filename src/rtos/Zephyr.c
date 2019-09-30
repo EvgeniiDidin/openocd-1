@@ -563,28 +563,72 @@ static int Zephyr_get_thread_reg_list(struct rtos *rtos, int64_t thread_id,
 
 	addr = thread_id + params->offsets[OFFSET_T_STACK_POINTER]
 		 - params->callee_saved_stacking->register_offsets[0].offset;
-	retval = rtos_generic_stack_read(rtos->target,
-									 params->callee_saved_stacking,
-									 addr, &callee_saved_reg_list,
-									 &num_callee_saved_regs);
-	if (retval < 0)
-		return retval;
 
-	addr = target_buffer_get_u32(rtos->target,
-								 callee_saved_reg_list[0].value);
-	if (params->offsets[OFFSET_T_PREEMPT_FLOAT] != UNIMPLEMENTED)
-		stacking = params->cpu_saved_fp_stacking;
-	else
+	if (!strcmp(params->target_name, "arcv2")) {
+		int32_t real_stack_addr;
+		/* Getting real stack addres from Kernel thread struct */
+		retval = target_read_u32(rtos->target,addr, &real_stack_addr);
+		if (retval < 0)
+			return retval;
+
+		/* Getting callee registers */
+		retval = rtos_generic_stack_read(rtos->target,
+			params->callee_saved_stacking,
+			real_stack_addr, &callee_saved_reg_list,
+			&num_callee_saved_regs);
+		if (retval < 0)
+			return retval;
+
 		stacking = params->cpu_saved_nofp_stacking;
-	retval = rtos_generic_stack_read(rtos->target, stacking, addr, reg_list,
-									 num_regs);
+		/* Getting blink and status32 registers */
+		retval = rtos_generic_stack_read(rtos->target, stacking,
+			real_stack_addr + num_callee_saved_regs * 4,
+			reg_list, num_regs);
 
-	if (retval >= 0)
-		for (int i = 1; i < num_callee_saved_regs; i++)
-			buf_cpy(callee_saved_reg_list[i].value,
+		if (retval >= 0)
+			for (int i = 0; i < num_callee_saved_regs; i++)
+				buf_cpy(callee_saved_reg_list[i].value,
 					(*reg_list)[callee_saved_reg_list[i].number].value,
 					callee_saved_reg_list[i].size);
 
+		/* Put blink value into PC */
+		buf_cpy((*reg_list)[31].value,(*reg_list)[34].value,32);
+
+		/* Put address after callee/caller in SP */
+		uint8_t stack_p[8];
+		int64_t stack_top;
+		stack_top = real_stack_addr + num_callee_saved_regs * 4 + arc_cpu_saved_stacking.stack_registers_size;
+
+		memcpy(stack_p, &(stack_top), 8);
+		buf_cpy(stack_p,(*reg_list)[28].value,32);
+
+	}
+	else if (!strcmp(params->target_name, "cortex_m")) {
+
+		retval = rtos_generic_stack_read(rtos->target,
+									params->callee_saved_stacking,
+									addr, &callee_saved_reg_list,
+									&num_callee_saved_regs);
+		if (retval < 0)
+			return retval;
+
+		addr = target_buffer_get_u32(rtos->target,
+						callee_saved_reg_list[0].value);
+		if (params->offsets[OFFSET_T_PREEMPT_FLOAT] != UNIMPLEMENTED)
+			stacking = params->cpu_saved_fp_stacking;
+		else
+			stacking = params->cpu_saved_nofp_stacking;
+		retval = rtos_generic_stack_read(rtos->target, stacking, addr, reg_list,
+										num_regs);
+
+		if (retval >= 0)
+			for (int i = 1; i < num_callee_saved_regs; i++)
+				buf_cpy(callee_saved_reg_list[i].value,
+					(*reg_list)[callee_saved_reg_list[i].number].value,
+					callee_saved_reg_list[i].size);
+	}
+	else
+		LOG_DEBUG("Unkown target");
 	free(callee_saved_reg_list);
 
 	return retval;
