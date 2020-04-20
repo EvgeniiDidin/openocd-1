@@ -518,10 +518,36 @@ int arc_dbg_exit_debug(struct target *target)
 }
 
 /* ----- Exported functions ------------------------------------------------ */
+static int arc_dbg_halt_smp(struct target *target)
+{
+        int retval = 0;
+        struct target_list *head;
+        struct target *curr;
+        head = target->head;
+        while (head != (struct target_list *)NULL) {
+                curr = head->target;
+                if ((curr != target) && (curr->state != TARGET_HALTED)
+                        && target_was_examined(curr)) {
+
+			/*avoid recursion in arc_dbg_halt */
+			curr->smp = 0;
+                        retval += arc_dbg_halt(curr);
+			curr->smp = 1;
+		}
+                head = head->next;
+        }
+        return retval;
+}
+
 
 int arc_dbg_halt(struct target *target)
 {
 	LOG_DEBUG("target->state: %s", target_state_name(target));
+
+        if (target->smp) {
+                LOG_DEBUG("halting smp");
+                CHECK_RETVAL(arc_dbg_halt_smp(target));
+        }
 
 	if (target->state == TARGET_HALTED) {
 		LOG_DEBUG("target was already halted");
