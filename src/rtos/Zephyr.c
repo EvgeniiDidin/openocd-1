@@ -29,7 +29,7 @@
 #include "target/target.h"
 #include "target/target_type.h"
 #include "target/armv7m.h"
-#include "target/arc32.h"
+#include "target/arc.h"
 
 #define UNIMPLEMENTED 0xFFFFFFFFU
 
@@ -723,9 +723,9 @@ static int Zephyr_create(struct target *target)
 	 * register values are saved on stack. */
 	if (!strcmp(name, "arcv2")){
 		uint32_t value;
-		struct arc32_common *arc32 = target_to_arc32(target);
+		struct arc_common *arc = target_to_arc(target);
 		/* Reading SEC_BUILD bcr */
-		CHECK_RETVAL(arc_jtag_read_aux_reg_one(&arc32->jtag_info, ARC_AUX_SEC_BUILD_REG, &value));
+		CHECK_RETVAL(arc_jtag_read_aux_reg_one(&arc->jtag_info, ARC_AUX_SEC_BUILD_REG, &value));
 		if (value != 0){
 			LOG_DEBUG("ARC EM board has security subsystem, changing offsets");
 			arc_cpu_saved[ARC_REG_NUM-1].offset = 8;
